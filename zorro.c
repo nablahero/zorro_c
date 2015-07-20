@@ -23,7 +23,9 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
  */
-#define DEBUG 1
+
+/* ENABLE DEBUGGING HERE - JUST REMOVE THE // BEFORE #define */
+//#define DEBUG 1
 #include <stdint.h>
 #include <stdio.h>
 
@@ -64,14 +66,6 @@ uint8_t inv_s[256] = {
 	0x0E, 0xA2, 0x17, 0x56, 0xFA, 0x01, 0x99, 0xEF, 0x16, 0x75, 0xB2, 0xC4, 0xDE, 0x84, 0xD4, 0x5D, 
 	0x3A, 0x1F, 0x44, 0x41, 0xB4, 0x6D, 0xD6, 0x9C, 0x55, 0x4E, 0x0A, 0x1B, 0x9A, 0x03, 0x6B, 0xB7
 };
-
-void printSBOXHex2Dec()	{
-	int i;
-	for (i = 0; i < 256; i++)	{
-		printf("%d ,", s[i]);
-	}
-	printf("\n");
-}
 
 /**
  * Function to print the internal state of Zorro
@@ -139,6 +133,34 @@ uint8_t cpy[4];
 }
 
 /**
+ * Inverse MixColumn Operation on one Column - Similar to AES
+ * @param column One Column of the State
+ */
+void invMixColumn(uint8_t* column) {
+uint8_t i;
+uint8_t cpy[4];
+	for(i = 0; i < 4; i++) {
+		cpy[i] = column[i];
+	}
+	column[0] = mulGaloisField2_8(cpy[0], 14) ^
+	mulGaloisField2_8(cpy[1], 11) ^
+	mulGaloisField2_8(cpy[2], 13) ^
+	mulGaloisField2_8(cpy[3], 9);
+	column[1] = mulGaloisField2_8(cpy[0], 9) ^
+	mulGaloisField2_8(cpy[1], 14) ^
+	mulGaloisField2_8(cpy[2], 11) ^
+	mulGaloisField2_8(cpy[3], 13);
+	column[2] = mulGaloisField2_8(cpy[0], 13) ^
+	mulGaloisField2_8(cpy[1], 9) ^
+	mulGaloisField2_8(cpy[2], 14) ^
+	mulGaloisField2_8(cpy[3], 11);
+	column[3] = mulGaloisField2_8(cpy[0], 11) ^
+	mulGaloisField2_8(cpy[1], 13) ^
+	mulGaloisField2_8(cpy[2], 9) ^
+	mulGaloisField2_8(cpy[3], 14);
+}
+
+/**
  * MixColumn Operation on all Column - Similar to AES
  * @param internBuffer internal state
  */
@@ -150,6 +172,24 @@ uint8_t column[4];
 			column[j] = internBuffer[(i * 4) + j];
 		}
 		mixColumn(column);
+		for (j = 0; j < 4; j++) {
+			internBuffer[(i * 4) + j] = column[j];
+		}
+	}
+}
+
+/**
+ * Invserse MixColumn Operation on all Column - Similar to AES
+ * @param internBuffer internal state
+ */
+void zorro_InvMixColumns(uint8_t* internBuffer) {
+int i, j;
+uint8_t column[4];
+	for (i = 0; i < 4; i++) {
+		for (j = 0; j < 4; j++) {
+			column[j] = internBuffer[(i * 4) + j];
+		}
+		invMixColumn(column);
 		for (j = 0; j < 4; j++) {
 			internBuffer[(i * 4) + j] = column[j];
 		}
@@ -226,30 +266,19 @@ void zorroOneRoundDec(uint8_t * state, uint8_t round)	{
 #ifdef DEBUG
 	printf("Round %i\n", round);
 #endif
-	/* SubBytes */
-	state[0] 	= s[state[0]];
-	state[4] 	= s[state[4]];
-	state[8] 	= s[state[8]];
-	state[12] 	= s[state[12]];
+	/* Inverse MixColumn */
+	zorro_InvMixColumns(state);
 #ifdef DEBUG
-	printf("SubBytes State:\n");
+	printf("Inv MixColumns State:\n");
 	printInternalState(state);
 #endif
-	/* Add Constant */
-	state[0]	= state[0] ^ round;
-	state[4]	= state[4] ^ round;
-	state[8]	= state[8] ^ round;
-	state[12]	= state[12] ^ (round << 3);
-#ifdef DEBUG
-	printf("Add Constant State:\n");
-	printInternalState(state);
-#endif
-	/* Shift Rows */
-	uint8_t tmp = state[1];
-	state[1]	= state[5];
-	state[5]	= state[9];
-	state[9]	= state[13];
-	state[13]	= tmp;
+
+	/* Inverse Shift Rows */
+	uint8_t tmp = state[13];
+	state[13]	= state[9];
+	state[9]	= state[5];
+	state[5]	= state[1];
+	state[1]	= tmp;
 
 	tmp			= state[2];
 	state[2]	= state[10];
@@ -259,18 +288,32 @@ void zorroOneRoundDec(uint8_t * state, uint8_t round)	{
 	state[14]	= tmp;
 
 	tmp			= state[3];
-	state[3]	= state[15];
-	state[15]	= state[11];
-	state[11]	= state[7];
-	state[7]	= tmp;
+	state[3]	= state[7];
+	state[7]	= state[11];
+	state[11]	= state[15];
+	state[15]	= tmp;
 #ifdef DEBUG
-	printf("Shift Rows State:\n");
+	printf("Inverse Shift Rows State:\n");
 	printInternalState(state);
 #endif
-	/* MixColumn */
-	zorro_MixColumns(state);
+
+	/* Inverse Add Constant */
+	state[0]	= state[0] ^ round;
+	state[4]	= state[4] ^ round;
+	state[8]	= state[8] ^ round;
+	state[12]	= state[12] ^ (round << 3);
 #ifdef DEBUG
-	printf("MixColumns State:\n");
+	printf("Inverse Add Constant State:\n");
+	printInternalState(state);
+#endif
+
+	/* Inverse SubBytes */
+	state[0] 	= inv_s[state[0]];
+	state[4] 	= inv_s[state[4]];
+	state[8] 	= inv_s[state[8]];
+	state[12] 	= inv_s[state[12]];
+#ifdef DEBUG
+	printf("Inverse SubBytes State:\n");
 	printInternalState(state);
 #endif
 
@@ -319,15 +362,18 @@ void zorroFourRoundDec(uint8_t * state, uint8_t * key, uint8_t round)	{
 		zorroOneRoundDec(state, round);
 		round--;
 	}
-
+#ifdef DEBUG
 	printf("Key Addition with Key: ");
+#endif
 	/* Key addition */
 	for(i = 0; i < 16; i++)	{
 		state[i] ^= key[i];
-		printf("%02X ", key[i]);
-	}
-	printf("\n");
 #ifdef DEBUG
+		printf("%02X ", key[i]);
+#endif
+	}
+#ifdef DEBUG
+	printf("\n");
 	printf("KeyAddition State #R%d:\n", round);
 	printInternalState(state);
 #endif
@@ -361,7 +407,7 @@ void zorroCompleteEnc(uint8_t * state, uint8_t * key)	{
 
 void zorroCompleteDec(uint8_t * state, uint8_t * key)	{
 /* Key Whitening - 6 x 4 Rounds of Zorro */
-	int i, round = 23;
+	int i, round = 24;
 
 	/* Key Whitening */
 	for(i = 0; i < 16; i++)	{
@@ -377,5 +423,4 @@ void zorroCompleteDec(uint8_t * state, uint8_t * key)	{
 		zorroFourRoundDec(state, key, round);
 		round -= 4;
 	}
-	printSBOXHex2Dec();
 }

@@ -39,3 +39,10 @@ void zorroCompleteEnc(uint8_t * state, uint8_t * key);
  * @return              No return value
  */
 void zorroCompleteDec(uint8_t * state, uint8_t * key);
+
+/**
+ * First 19 rounds of encryption
+ * @param state Pointer to the state
+ * @param key   Pointer to the key
+ */
+int zorro19RoundEnc(uint8_t * state, uint8_t * state2, uint8_t * key);
